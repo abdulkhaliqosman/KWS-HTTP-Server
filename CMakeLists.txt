@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(KWSHTTPServer)
+project(kwserver)
 
-add_executable(KWSHTTPServer main.cpp)
+add_executable(kwserver main.cpp)
