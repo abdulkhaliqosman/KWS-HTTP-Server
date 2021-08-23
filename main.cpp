@@ -12,9 +12,10 @@ constexpr int BACKLOG_COUNT = 5;
 constexpr int MAXLINE = 2048;
 constexpr int DEFAULT_PORT = 80;
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
-    printf("Welcome to Khaliq Web Services kwserver!");
+    printf("Welcome to Khaliq Web Services kwserver!\n");
+    fflush(stdout);
 
     int socketfd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in serv_addr, cli_addr;
@@ -81,21 +82,30 @@ int main(int argc, char* argv[])
                 exit(1);
             }
 
-            const char* response = "HTTP/1.1 200 OK";
-            const char* contentType = "Content-Type: text/html";
-            const char* contentLength = "Content-Length";
-            const int filelen = readfile(filebuf, MAXLINE);
+            char request[8];
 
-            const int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
+            sscanf(recvline, "%7s", request);
+            printf("HTTP request method: %s\n", request);
 
-            printf("recvmsg=%s\n", recvline);
-            printf("len = %d\n", len);
+            // We do not support anything other than GET
+            if (strcmp(request, "GET") == 0)
+            {
+                const char *response = "HTTP/1.1 200 OK";
+                const char *contentType = "Content-Type: text/html";
+                const char *contentLength = "Content-Length";
+                const int filelen = readfile(filebuf, MAXLINE);
 
-            printf("sendmsg: %s\n", sendline);
-            printf("len =%d\n", sendlen);
+                const int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
 
-            int sent = send(connfd, sendline, sendlen, 0);
-            printf("sent = %d\n", sent);
+                printf("recvmsg=%s\n", recvline);
+                printf("len = %d\n", len);
+
+                printf("sendmsg: %s\n", sendline);
+                printf("len =%d\n", sendlen);
+
+                int sent = send(connfd, sendline, sendlen, 0);
+                printf("sent = %d\n", sent);
+            }
 
             close(connfd);
         }
