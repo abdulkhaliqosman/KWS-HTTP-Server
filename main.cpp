@@ -58,11 +58,6 @@ int main(int argc, char *argv[])
 
     while (true)
     {
-        char recvline[MAXLINE];
-        char sendline[MAXLINE];
-
-        char filebuf[MAXLINE];
-
         int readyFD = select(maxfdp1, &rset, nullptr, nullptr, nullptr);
         if (readyFD < 0)
         {
@@ -75,36 +70,47 @@ int main(int argc, char *argv[])
         { /* socket is readable */
 
             int connfd = accept(socketfd, (sockaddr *)&cli_addr, &cli_addr_len);
-            int len = recv(connfd, recvline, MAXLINE, 0);
-            if (len == -1)
+            char method[8];
+            char uri[MAXLINE];
+            char httpver[16];
+
             {
-                perror("recv error");
-                exit(1);
+                char recvline[MAXLINE];
+                int recvlen = recv(connfd, recvline, MAXLINE, 0);
+                if (recvlen == -1)
+                {
+                    perror("recv error");
+                    exit(1);
+                }
+
+                sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
+
+                printf("recvmsg=%s\n", recvline);
+                printf("recvlen = %d\n", recvlen);
+
+                printf("HTTP request method: %s\n", method);
+                printf("uri: %s\n", uri);
             }
 
-            char request[8];
-
-            sscanf(recvline, "%7s", request);
-            printf("HTTP request method: %s\n", request);
-
-            // We do not support anything other than GET
-            if (strcmp(request, "GET") == 0)
+            // We do not support anything other than GET /
+            if (strcmp(method, "GET") == 0 && strcmp(uri, "/") == 0)
             {
+                char sendline[MAXLINE];
+
+                char filebuf[MAXLINE];
+
                 const char *response = "HTTP/1.1 200 OK";
                 const char *contentType = "Content-Type: text/html";
                 const char *contentLength = "Content-Length";
-                const int filelen = readfile(filebuf, MAXLINE);
+                const int filelen = readfile("./index.html", filebuf, MAXLINE);
 
                 const int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
 
-                printf("recvmsg=%s\n", recvline);
-                printf("len = %d\n", len);
-
                 printf("sendmsg: %s\n", sendline);
-                printf("len =%d\n", sendlen);
+                printf("sendlen =%d\n", sendlen);
 
-                int sent = send(connfd, sendline, sendlen, 0);
-                printf("sent = %d\n", sent);
+                int sentlen = send(connfd, sendline, sendlen, 0);
+                printf("sent = %d\n", sentlen);
             }
 
             close(connfd);

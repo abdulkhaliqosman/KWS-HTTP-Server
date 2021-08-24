@@ -1,8 +1,8 @@
 #include <cstdio>
 
-int readfile(char* filebuf, int filebufsize)
+int readfile(const char* filename, char* filebuf, int filebufsize)
 {
-    FILE *fd = fopen("./index.html", "r");
+    FILE *fd = fopen(filename, "r");
 
     // obtain file size:
     fseek(fd, 0, SEEK_END);
