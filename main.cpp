@@ -10,7 +10,7 @@
 
 constexpr int BACKLOG_COUNT = 5;
 constexpr int MAXLINE = 2048;
-constexpr int DEFAULT_PORT = 80;
+constexpr int DEFAULT_PORT = 8080;
 
 int main(int argc, char *argv[])
 {
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
             char httpver[16];
 
             {
-                char recvline[MAXLINE];
+                char recvline[MAXLINE+1];
                 int recvlen = recv(connfd, recvline, MAXLINE, 0);
                 if (recvlen == -1)
                 {
@@ -83,13 +83,20 @@ int main(int argc, char *argv[])
                     exit(1);
                 }
 
-                sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
+                recvline[recvlen] = 0;
 
-                printf("recvmsg=%s\n", recvline);
-                printf("recvlen = %d\n", recvlen);
+                int num = sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
+                
+                if( num < 2 ) {
+                    method[0] = 0;
+                }else {
 
-                printf("HTTP request method: %s\n", method);
-                printf("uri: %s\n", uri);
+                    printf("recvmsg=%s\n", recvline);
+                    printf("recvlen = %d\n", recvlen);
+
+                    printf("HTTP request method: %s\n", method);
+                    printf("uri: %s\n", uri);
+                }
             }
 
             // We do not support anything other than GET /
@@ -102,9 +109,10 @@ int main(int argc, char *argv[])
                 const char *response = "HTTP/1.1 200 OK";
                 const char *contentType = "Content-Type: text/html";
                 const char *contentLength = "Content-Length";
-                const int filelen = readfile("./index.html", filebuf, MAXLINE);
 
-                const int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
+                int filelen = readfile("./index.html", filebuf, MAXLINE);
+                //! How you make sure sendline have enought space ?
+                int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
 
                 printf("sendmsg: %s\n", sendline);
                 printf("sendlen =%d\n", sendlen);
