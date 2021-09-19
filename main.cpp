@@ -9,36 +9,44 @@
 #include "file.cpp"
 #include <pthread.h>
 
-constexpr int BACKLOG_COUNT = 5;
-constexpr int MAXLINE = 2048;
-constexpr int DEFAULT_PORT = 8080;
 #include <sys/sysinfo.h>
 
 #include <fcntl.h>
+
+#include "threadsafequeue.h"
+#include <signal.h>
+
+constexpr int BACKLOG_COUNT = 5;
+constexpr int MAXLINE = 2048;
+constexpr int DEFAULT_PORT = 8080;
+constexpr int MAX_CONN = 1024;
+constexpr int SLEEP_TIME = 20;
+
+struct SocketData
+{
+    int socketfd = 0;
+};
+
+using SocketQueue = ThreadSafeQueue<SocketData, MAX_CONN>;
+
+SocketQueue g_SocketQueue;
+int g_SocketFd = 0;
 
 void *SocketThread(void *arg); // forward declaration
 
 struct ThreadInfo
 {
     pthread_t m_ThreadId = 0;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
     int m_ThreadNum = 0;
-    int m_ConnFd = 0;
-    bool m_Waiting = false;
 
     void init(const pthread_attr_t &attr)
     {
-        pthread_mutex_init(&mutex, nullptr);
-        pthread_cond_init(&cond, nullptr);
         pthread_create(&m_ThreadId, &attr, &SocketThread, (void *)this);
     }
 
     void destroy()
     {
         pthread_join(m_ThreadId, nullptr);
-        pthread_mutex_destroy(&mutex);
-        pthread_cond_destroy(&cond);
     }
 };
 
@@ -47,31 +55,43 @@ void *SocketThread(void *arg)
     ThreadInfo *threadInfo = (ThreadInfo *)arg;
     while (true)
     {
-        pthread_mutex_lock(&threadInfo->mutex);
+        SocketData data;
+        while (!g_SocketQueue.Pop(data))
+        {
+            if (g_SocketQueue.Empty())
+            {
+                usleep(SLEEP_TIME);
+            }
+        }
 
-        threadInfo->m_Waiting = true;
-        // printf("Thread %d Waiting\n", threadInfo->m_ThreadNum);
+        char recvline[MAXLINE + 1];
+        int recvlen = read(data.socketfd, recvline, MAXLINE);
+        if (recvlen == -1)
+        {
+            if (errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                while (!g_SocketQueue.Push(data)) // put at end of queue
+                {
+                    if (g_SocketQueue.Full())
+                    {
+                        usleep(SLEEP_TIME);
+                    }
+                }
+                continue;
+            }
 
-        pthread_cond_wait(&threadInfo->cond, &threadInfo->mutex);
+            perror("recv error");
+            exit(1);
+        }
 
-        pthread_mutex_unlock(&threadInfo->mutex);
-
-        printf("Thread %d running, wait = %s\n", threadInfo->m_ThreadNum, threadInfo->m_Waiting ? "true" : "false");
         char method[8];
         char uri[MAXLINE];
         char httpver[16];
 
         {
-            char recvline[MAXLINE + 1];
-            int recvlen = recv(threadInfo->m_ConnFd, recvline, MAXLINE, 0);
-            if (recvlen == -1)
-            {
-                perror("recv error");
-                exit(1);
-            }
 
             recvline[recvlen] = 0;
-            printf("recvlen = %d\n", recvlen);
+            // printf("recvlen = %d\n", recvlen);
 
             int num = sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
 
@@ -91,7 +111,7 @@ void *SocketThread(void *arg)
         // We do not support anything other than GET /
         if (strcmp(method, "GET") == 0 && strcmp(uri, "/") == 0)
         {
-            printf("Thread %d GET /\n", threadInfo->m_ThreadNum);
+            // printf("Thread %d GET /\n", threadInfo->m_ThreadNum);
             char sendline[MAXLINE];
 
             char filebuf[MAXLINE];
@@ -107,15 +127,21 @@ void *SocketThread(void *arg)
             // printf("sendmsg: %s\n", sendline);
             // printf("sendlen =%d\n", sendlen);
 
-            int sentlen = send(threadInfo->m_ConnFd, sendline, sendlen, 0);
+            int sentlen = write(data.socketfd, sendline, sendlen);
 
             // printf("sent = %d\n", sentlen);
         }
-        printf("Thread %d close\n", threadInfo->m_ThreadNum);
+        // printf("Thread %d close\n", threadInfo->m_ThreadNum);
 
-        close(threadInfo->m_ConnFd);
+        close(data.socketfd);
     }
     return nullptr;
+}
+
+void sigint(int signum)
+{
+    close(g_SocketFd);
+    exit(0);
 }
 
 int main(int argc, char *argv[])
@@ -132,9 +158,6 @@ int main(int argc, char *argv[])
         perror("ERROR opening socket");
         exit(1);
     }
-
-    // int flags = fcntl(socketfd, F_GETFL, 0);
-    // fcntl(socketfd, F_SETFL, flags | O_NONBLOCK);
 
     sockaddr_in serv_addr;
     bzero((char *)&serv_addr, sizeof(serv_addr));
@@ -157,6 +180,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    g_SocketFd = socketfd;
+    signal(SIGINT, sigint);
+
     fd_set rset;
     FD_ZERO(&rset);
     FD_SET(socketfd, &rset);
@@ -165,7 +191,7 @@ int main(int argc, char *argv[])
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    printf("Number of processors: %d\n", num_procs);
+    // printf("Number of processors: %d\n", num_procs);
 
     int num_threads = num_procs - 1;
     ThreadInfo *threadPool = new ThreadInfo[num_threads];
@@ -182,43 +208,30 @@ int main(int argc, char *argv[])
         int readyFD = select(maxfdp1, &rset, nullptr, nullptr, nullptr);
         if (readyFD < 0)
         {
-            perror("server terminated prematurely");
-            exit(1);
+            if (errno != EINTR)
+            {
+                perror("server terminated prematurely");
+                exit(1);
+            }
         }
 
         if (FD_ISSET(socketfd, &rset))
-        { /* socket is readable */
-            // printf("Socket is readable\n");
-            // find first sleeping thread
+        {
+            sockaddr_in cli_addr;
+            socklen_t cli_addr_len = sizeof(cli_addr);
 
-            // bool read = false;
-            for (int i = 0; i < num_threads; ++i)
+            int connfd = accept(socketfd, (sockaddr *)&cli_addr, &cli_addr_len);
+            int flags = fcntl(socketfd, F_GETFL, 0);
+            fcntl(socketfd, F_SETFL, flags | O_NONBLOCK);
+
+            SocketData data;
+            data.socketfd = connfd;
+
+            while (!g_SocketQueue.Push(data))
             {
-                ThreadInfo &thread = threadPool[i];
-                pthread_mutex_lock(&thread.mutex);
-
-                if (thread.m_Waiting)
+                if (g_SocketQueue.Full())
                 {
-                    // printf("thread i = %d is ready\n", i + 1);
-                    sockaddr_in cli_addr;
-                    socklen_t cli_addr_len = sizeof(cli_addr);
-
-                    int connfd = accept(socketfd, (sockaddr *)&cli_addr, &cli_addr_len);
-                    if (connfd >= 0)
-                    {
-                        thread.m_ConnFd = connfd;
-                        thread.m_Waiting = false;
-                        printf("Accept Count: %d\n", ++acceptCount);
-
-                        pthread_cond_signal(&thread.cond);
-                    }
-
-                    pthread_mutex_unlock(&thread.mutex);
-                    break;
-                }
-                else
-                {
-                    pthread_mutex_unlock(&thread.mutex);
+                    usleep(SLEEP_TIME);
                 }
             }
         }
