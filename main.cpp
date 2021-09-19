@@ -22,7 +22,6 @@ struct ThreadInfo
 {
     pthread_t m_ThreadId = 0;
     pthread_mutex_t mutex;
-    pthread_mutex_t mutex2;
     pthread_cond_t cond;
     int m_ThreadNum = 0;
     int m_ConnFd = 0;
@@ -31,7 +30,6 @@ struct ThreadInfo
     void init(const pthread_attr_t &attr)
     {
         pthread_mutex_init(&mutex, nullptr);
-        pthread_mutex_init(&mutex2, nullptr);
         pthread_cond_init(&cond, nullptr);
         pthread_create(&m_ThreadId, &attr, &SocketThread, (void *)this);
     }
@@ -40,7 +38,6 @@ struct ThreadInfo
     {
         pthread_join(m_ThreadId, nullptr);
         pthread_mutex_destroy(&mutex);
-        pthread_mutex_destroy(&mutex2);
         pthread_cond_destroy(&cond);
     }
 };
@@ -51,15 +48,15 @@ void *SocketThread(void *arg)
     while (true)
     {
         pthread_mutex_lock(&threadInfo->mutex);
-        pthread_mutex_lock(&threadInfo->mutex2);
 
         threadInfo->m_Waiting = true;
+        // printf("Thread %d Waiting\n", threadInfo->m_ThreadNum);
+
+        pthread_cond_wait(&threadInfo->cond, &threadInfo->mutex);
+
         pthread_mutex_unlock(&threadInfo->mutex);
 
-        pthread_cond_wait(&threadInfo->cond, &threadInfo->mutex2);
-        pthread_mutex_unlock(&threadInfo->mutex2);
-
-        // printf("Thread %d running, wait = %s\n", threadInfo->m_ThreadNum, threadInfo->m_Waiting ? "true" : "false");
+        printf("Thread %d running, wait = %s\n", threadInfo->m_ThreadNum, threadInfo->m_Waiting ? "true" : "false");
         char method[8];
         char uri[MAXLINE];
         char httpver[16];
@@ -74,6 +71,7 @@ void *SocketThread(void *arg)
             }
 
             recvline[recvlen] = 0;
+            printf("recvlen = %d\n", recvlen);
 
             int num = sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
 
@@ -84,7 +82,6 @@ void *SocketThread(void *arg)
             else
             {
                 // printf("recvmsg=%s\n", recvline);
-                // printf("recvlen = %d\n", recvlen);
 
                 // printf("HTTP request method: %s\n", method);
                 // printf("uri: %s\n", uri);
@@ -94,6 +91,7 @@ void *SocketThread(void *arg)
         // We do not support anything other than GET /
         if (strcmp(method, "GET") == 0 && strcmp(uri, "/") == 0)
         {
+            printf("Thread %d GET /\n", threadInfo->m_ThreadNum);
             char sendline[MAXLINE];
 
             char filebuf[MAXLINE];
@@ -110,8 +108,10 @@ void *SocketThread(void *arg)
             // printf("sendlen =%d\n", sendlen);
 
             int sentlen = send(threadInfo->m_ConnFd, sendline, sendlen, 0);
+
             // printf("sent = %d\n", sentlen);
         }
+        printf("Thread %d close\n", threadInfo->m_ThreadNum);
 
         close(threadInfo->m_ConnFd);
     }
@@ -126,11 +126,6 @@ int main(int argc, char *argv[])
     fflush(stdout);
 
     int socketfd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in serv_addr, cli_addr;
-    socklen_t cli_addr_len = sizeof(cli_addr);
-
-    /* First call to socket() function */
-    socketfd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (socketfd < 0)
     {
@@ -138,9 +133,10 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    int flags = fcntl(socketfd, F_GETFL, 0);
-    fcntl(socketfd, F_SETFL, flags | O_NONBLOCK);
+    // int flags = fcntl(socketfd, F_GETFL, 0);
+    // fcntl(socketfd, F_SETFL, flags | O_NONBLOCK);
 
+    sockaddr_in serv_addr;
     bzero((char *)&serv_addr, sizeof(serv_addr));
 
     int portno = DEFAULT_PORT;
@@ -179,6 +175,7 @@ int main(int argc, char *argv[])
         threadPool[i].m_ThreadNum = i + 1;
         threadPool[i].init(attr);
     }
+    int acceptCount = 0;
 
     while (true)
     {
@@ -211,12 +208,9 @@ int main(int argc, char *argv[])
                     {
                         thread.m_ConnFd = connfd;
                         thread.m_Waiting = false;
+                        printf("Accept Count: %d\n", ++acceptCount);
 
                         pthread_cond_signal(&thread.cond);
-                    }
-                    else if(errno == EWOULDBLOCK || errno == EAGAIN)
-                    {
-                        break;
                     }
 
                     pthread_mutex_unlock(&thread.mutex);
