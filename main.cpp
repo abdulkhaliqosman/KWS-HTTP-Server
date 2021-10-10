@@ -7,14 +7,15 @@
 #include <cstdio>
 
 #include "file.cpp"
-#include <pthread.h>
 
 #include <sys/sysinfo.h>
 
 #include <fcntl.h>
-
-#include "threadsafequeue.h"
 #include <signal.h>
+
+#include "core/thread/threadsafequeue.h"
+#include "core/thread/threadpool.h"
+
 
 constexpr int BACKLOG_COUNT = 5;
 constexpr int MAXLINE = 2048;
@@ -31,24 +32,6 @@ using SocketQueue = ThreadSafeQueue<SocketData, MAX_CONN>;
 
 SocketQueue g_SocketQueue;
 int g_SocketFd = 0;
-
-void *SocketThread(void *arg); // forward declaration
-
-struct ThreadInfo
-{
-    pthread_t m_ThreadId = 0;
-    int m_ThreadNum = 0;
-
-    void init(const pthread_attr_t &attr)
-    {
-        pthread_create(&m_ThreadId, &attr, &SocketThread, (void *)this);
-    }
-
-    void destroy()
-    {
-        pthread_join(m_ThreadId, nullptr);
-    }
-};
 
 void *SocketThread(void *arg)
 {
@@ -189,18 +172,7 @@ int main(int argc, char *argv[])
 
     int maxfdp1 = socketfd + 1;
 
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    // printf("Number of processors: %d\n", num_procs);
-
-    int num_threads = num_procs - 1;
-    ThreadInfo *threadPool = new ThreadInfo[num_threads];
-
-    for (int i = 0; i < num_threads; ++i)
-    {
-        threadPool[i].m_ThreadNum = i + 1;
-        threadPool[i].init(attr);
-    }
+    ThreadPool threadPool(num_procs - 1, &SocketThread);
     int acceptCount = 0;
 
     while (true)
@@ -237,13 +209,5 @@ int main(int argc, char *argv[])
         }
     }
 
-    for (int i = 0; i < num_threads; ++i)
-    {
-        threadPool[i].destroy();
-    }
-
-    delete[] threadPool;
-
-    pthread_attr_destroy(&attr);
     close(socketfd);
 }

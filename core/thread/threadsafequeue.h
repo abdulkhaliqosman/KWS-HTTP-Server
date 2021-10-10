@@ -1,3 +1,6 @@
+#ifndef CORE_THREAD_THREADSAFEQUEUE_H
+#define CORE_THREAD_THREADSAFEQUEUE_H
+
 #include <pthread.h>
 
 // Not lockless, will experiment with lockless next iteration
@@ -7,7 +10,6 @@ class ThreadSafeQueue
 {
 public:
     ThreadSafeQueue()
-    
     {
         pthread_mutex_init(&mutex, nullptr);
 
@@ -120,3 +122,5 @@ private:
 
     pthread_mutex_t mutex;
 };
+
+#endif // #ifndef CORE_THREAD_THREADSAFEQUEUE_H
