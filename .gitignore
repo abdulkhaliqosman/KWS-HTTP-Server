@@ -46,3 +46,5 @@ _deps
 
 #Executable
 kwserver
+.vscode/settings.json
+.vs

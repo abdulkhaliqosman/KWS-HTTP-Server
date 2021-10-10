@@ -6,8 +6,6 @@
 
 #include <cstdio>
 
-#include "file.cpp"
-
 #include <sys/sysinfo.h>
 
 #include <fcntl.h>
@@ -15,6 +13,7 @@
 
 #include "core/thread/threadsafequeue.h"
 #include "core/thread/threadpool.h"
+#include "core/filesystem/filesystem.h"
 
 
 constexpr int BACKLOG_COUNT = 5;
@@ -28,14 +27,14 @@ struct SocketData
     int socketfd = 0;
 };
 
-using SocketQueue = ThreadSafeQueue<SocketData, MAX_CONN>;
+using SocketQueue = ak::core::ThreadSafeQueue<SocketData, MAX_CONN>;
 
 SocketQueue g_SocketQueue;
 int g_SocketFd = 0;
 
 void *SocketThread(void *arg)
 {
-    ThreadInfo *threadInfo = (ThreadInfo *)arg;
+    // ak::core::ThreadInfo *threadInfo = (ak::core::ThreadInfo *)arg;
     while (true)
     {
         SocketData data;
@@ -103,7 +102,7 @@ void *SocketThread(void *arg)
             const char *contentType = "Content-Type: text/html";
             const char *contentLength = "Content-Length";
 
-            int filelen = readfile("./index.html", filebuf, MAXLINE);
+            int filelen = ak::core::readfile("./index.html", filebuf, MAXLINE);
             //! How you make sure sendline have enought space ?
             int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
 
@@ -172,7 +171,7 @@ int main(int argc, char *argv[])
 
     int maxfdp1 = socketfd + 1;
 
-    ThreadPool threadPool(num_procs - 1, &SocketThread);
+    ak::core::ThreadPool threadPool(num_procs - 1, &SocketThread);
     int acceptCount = 0;
 
     while (true)

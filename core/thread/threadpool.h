@@ -1,62 +1,32 @@
 #ifndef CORE_THREAD_THREADPOOL_H
 #define CORE_THREAD_THREADPOOL_H
 
-#include <pthread.h>
+#include <pthread.h> // pthread_attr_t, pthread_t
 
-struct ThreadInfo
+namespace ak::core
 {
-public:
-    pthread_t m_ThreadId = 0;
-    int m_ThreadNum = 0;
-
-    using ThreadFuncType = void *(void *);
-
-    void init(const pthread_attr_t &attr, ThreadFuncType func)
+    class ThreadPool
     {
-        pthread_create(&m_ThreadId, &attr, func, (void *)this);
-    }
+        using ThreadFuncType = void *(void *);
 
-    void destroy()
-    {
-        pthread_join(m_ThreadId, nullptr);
-    }
+    public:
+        ThreadPool(int threadCount, ThreadFuncType func);
+        virtual ~ThreadPool();
 
-private:
-};
-
-class ThreadPool
-{
-public:
-    ThreadPool(int threadCount, ThreadInfo::ThreadFuncType func)
-        : m_Threads(new ThreadInfo[threadCount]), m_NumThreads(threadCount)
-    {
-        pthread_attr_init(&attr);
-        // printf("Number of processors: %d\n", num_procs);
-
-        for (int i = 0; i < m_NumThreads; ++i)
+    private:
+        struct ThreadInfo
         {
-            m_Threads[i].m_ThreadNum = i + 1;
-            m_Threads[i].init(attr, func);
-        }
-    }
+            pthread_t m_ThreadId = 0;
+            int m_ThreadNum = 0;
 
-    virtual ~ThreadPool()
-    {
-        for (int i = 0; i < m_NumThreads; ++i)
-        {
-            m_Threads[i].destroy();
-        }
+            void init(const pthread_attr_t &attr, ThreadFuncType func);
+            void destroy();
+        };
 
-        delete[] m_Threads;
-
-        pthread_attr_destroy(&attr);
-    }
-
-private:
-    ThreadInfo *m_Threads;
-    int m_NumThreads;
-
-    pthread_attr_t attr;
-};
+        ThreadInfo *m_Threads;
+        int m_NumThreads;
+        pthread_attr_t attr;
+    };
+} // namespace ak::core
 
 #endif // #ifndef CORE_THREADPOOL_THREADPOOL_H
