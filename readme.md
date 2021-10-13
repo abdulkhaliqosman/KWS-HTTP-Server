@@ -1,7 +1,8 @@
 How to build:
 
 1. Run cmake --build .
-2. Run sudo ./kwserver
+2. Run cd ./example
+3. Run sudo ./example
 
 Some Humble Brag
 ```
@@ -60,5 +61,3 @@ Percentage of the requests served within a certain time (ms)
   99%    259
  100%    274 (longest request)
  ```
-
- 

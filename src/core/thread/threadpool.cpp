@@ -16,7 +16,8 @@ namespace ak::core
         : m_Threads(new ThreadInfo[threadCount]), m_NumThreads(threadCount)
     {
         pthread_attr_init(&attr);
-        akLogger.LogDebug("Threads Created: %d\n", threadCount);
+        
+        akLogDebug("Threads Created: %d\n", threadCount);
 
         for (int i = 0; i < m_NumThreads; ++i)
         {

@@ -1,10 +1,12 @@
-#include <iostream>
+#include "kwserver.h"
+
 #include <sys/socket.h>
 #include <netinet/in.h>
+
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <cstdio>
+#include <cerrno>
 
 #include <sys/sysinfo.h>
 
@@ -14,7 +16,7 @@
 #include "core/thread/threadsafequeue.h"
 #include "core/thread/threadpool.h"
 #include "core/filesystem/filesystem.h"
-
+#include "core/logger/logger.h"
 
 constexpr int BACKLOG_COUNT = 5;
 constexpr int MAXLINE = 2048;
@@ -34,7 +36,6 @@ int g_SocketFd = 0;
 
 void *SocketThread(void *arg)
 {
-    // ak::core::ThreadInfo *threadInfo = (ak::core::ThreadInfo *)arg;
     while (true)
     {
         SocketData data;
@@ -62,8 +63,8 @@ void *SocketThread(void *arg)
                 continue;
             }
 
-            perror("recv error");
-            exit(1);
+            akLogError("recv error");
+            continue;
         }
 
         char method[8];
@@ -73,8 +74,10 @@ void *SocketThread(void *arg)
         {
 
             recvline[recvlen] = 0;
-            // printf("recvlen = %d\n", recvlen);
+            akLogDebug("recvlen = %d\n", recvlen);
+            akLogTrace("recvmsg = %s\n", recvline);
 
+            // TODO: fix this
             int num = sscanf(recvline, "%7s %2047s %15s", method, uri, httpver);
 
             if (num < 2)
@@ -83,10 +86,8 @@ void *SocketThread(void *arg)
             }
             else
             {
-                // printf("recvmsg=%s\n", recvline);
-
-                // printf("HTTP request method: %s\n", method);
-                // printf("uri: %s\n", uri);
+                akLogTrace("HTTP request method: %s\n", method);
+                akLogTrace("uri: %s\n", uri);
             }
         }
 
@@ -102,7 +103,7 @@ void *SocketThread(void *arg)
             const char *contentType = "Content-Type: text/html";
             const char *contentLength = "Content-Length";
 
-            int filelen = ak::core::readfile("./index.html", filebuf, MAXLINE);
+            int filelen = ak::core::readfile("./public/index.html", filebuf, MAXLINE);
             //! How you make sure sendline have enought space ?
             int sendlen = snprintf(sendline, MAXLINE, "%s\n%s\n%s: %d\n\n%s", response, contentType, contentLength, filelen, filebuf);
 
@@ -126,13 +127,14 @@ void sigint(int signum)
     exit(0);
 }
 
-int main(int argc, char *argv[])
+void KwServer::Init()
 {
-    int num_procs = get_nprocs();
-
     printf("Welcome to Khaliq Web Services kwserver!\n");
     fflush(stdout);
+}
 
+void KwServer::Run()
+{
     int socketfd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (socketfd < 0)
@@ -171,6 +173,7 @@ int main(int argc, char *argv[])
 
     int maxfdp1 = socketfd + 1;
 
+    int num_procs = get_nprocs();
     ak::core::ThreadPool threadPool(num_procs - 1, &SocketThread);
     int acceptCount = 0;
 
