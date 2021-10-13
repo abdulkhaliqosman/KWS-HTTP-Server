@@ -16,9 +16,11 @@ include_directories("${PROJECT_SOURCE_DIR}/../include")
 
 add_library(kwserver STATIC
             "${CMAKE_CURRENT_SOURCE_DIR}/kwserver.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/platform/kwserver_posix.cpp"
             )
 
 
 # add_subdirectory(netcore)
+target_include_directories (core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(${PROJECT_NAME} core)

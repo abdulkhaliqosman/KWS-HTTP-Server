@@ -2,6 +2,8 @@
 
 int main()
 {
-    KwServer kwServer;
-    kwServer.Run();
+    KwServer* kwServer = KwServer::Create();
+
+    kwServer->Init();
+    kwServer->Run();
 }

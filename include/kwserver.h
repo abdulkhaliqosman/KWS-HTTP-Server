@@ -4,8 +4,10 @@
 class KwServer
 {
 public:
-    void Init();
-    void Run();
+    static KwServer* Create();
+
+    virtual void Init() = 0;
+    virtual void Run() = 0;
 };
 
 #endif
